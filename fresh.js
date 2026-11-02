@@ -95,6 +95,24 @@
     try { fetch(FEED + '/dl?loc=' + encodeURIComponent(dl), { headers: { 'X-TV-Token': TOKEN } }).catch(function () {}); } catch (e) {}
   }
 
+  // Preload the exact display URL through an <img> (same request signature as CSS
+  // background / <img> rendering, so the browser image cache is warm and decode is done)
+  // BEFORE a photo joins the rotation. The segmentation fetch() alone does NOT warm the
+  // image path (Unsplash answers vary on Accept), which caused a black flash on every change.
+  function preload(url) {
+    return new Promise(function (resolve) {
+      var img = new Image(), done = false;
+      var to = setTimeout(function () { if (!done) { done = true; resolve(false); } }, 20000);
+      function fin(ok) { if (!done) { done = true; clearTimeout(to); resolve(ok); } }
+      img.onload = function () {
+        if (img.decode) img.decode().then(function () { fin(true); }, function () { fin(true); });
+        else fin(true);
+      };
+      img.onerror = function () { fin(false); };
+      img.src = url;
+    });
+  }
+
   function processPhoto(p) {
     return fetch(p.url, { mode: 'cors' })
       .then(function (r) { if (!r.ok) throw new Error('img ' + r.status); return r.blob(); })
@@ -109,14 +127,17 @@
         if (ovFrac < 0.10 || ovFrac > 0.60) { log('gated out', p.id, 'overlap ' + ovFrac.toFixed(2)); return false; }
         var ovC = overlapCov(res.stats, pl.st, Math.round(pl.ovPx / pl.scale));
         if (ovC < 0.25) { log('gated out', p.id, 'wispy overlap ' + ovC.toFixed(2)); return false; }
-        var cutUrl = URL.createObjectURL(res.blob);
-        var i = WP.bg.length;
-        WP.bg.push(p.url); WP.idle.push(p.url); WP.cut.push(cutUrl); WP.clk.push({ top: pl.top, size: pl.size });
-        fresh.push(i);
-        credits[p.url] = { author: p.author, link: p.authorLink };
-        ping(p.dl);
-        log('added', p.id, 'at index', i, 'clock', JSON.stringify({ top: pl.top, size: pl.size, ov: +ovFrac.toFixed(2) }));
-        return true;
+        return preload(p.url).then(function (ok) {
+          if (!ok) { log('preload fail', p.id); return false; }
+          var cutUrl = URL.createObjectURL(res.blob);
+          var i = WP.bg.length;
+          WP.bg.push(p.url); WP.idle.push(p.url); WP.cut.push(cutUrl); WP.clk.push({ top: pl.top, size: pl.size });
+          fresh.push(i);
+          credits[p.url] = { author: p.author, link: p.authorLink };
+          ping(p.dl);
+          log('added', p.id, 'at index', i, 'clock', JSON.stringify({ top: pl.top, size: pl.size, ov: +ovFrac.toFixed(2) }));
+          return true;
+        });
       })
       .catch(function (e) { log('photo fail', e); return false; });
   }
@@ -191,18 +212,63 @@
     var idle = deepQ('.idle');
     if (idle) {
       var img = idle.querySelector('img.idle-layer');
-      return { host: idle, src: img ? img.getAttribute('src') : null };
+      return { kind: 'idle', host: idle, src: img ? img.getAttribute('src') : null };
     }
     var bd = deepQ('.bd');
     if (bd && bd.parentNode) {
       var m = /url\(["']?([^"')]+)/.exec(bd.style.backgroundImage || '');
-      return { host: bd.parentNode, src: m ? m[1] : null };
+      return { kind: 'home', host: bd.parentNode, src: m ? m[1] : null };
     }
     return null;
+  }
+
+  // --- crossfade underlay: keep the outgoing photo visible while the new one fades in ---
+  // The app remounts its backdrop node on each change (the new node fades from opacity 0
+  // over a black stage). We keep a permanent underlay behind it holding the CURRENT photo,
+  // refreshed ~1s after each change settles, so every transition crossfades from the
+  // previous photo instead of dipping to black. No timing race with the app's remount.
+  var lastSrc = { home: null, idle: null }, lastKind = null, xfTimer = null;
+  function underlayFor(s) {
+    var u = s.host.querySelector(':scope > .fresh-xf');
+    if (u && u.isConnected) return u;
+    u = document.createElement(s.kind === 'idle' ? 'img' : 'div');
+    u.className = 'fresh-xf';
+    if (s.kind === 'idle') {
+      u.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.8) saturate(1.1);pointer-events:none;';
+    } else {
+      u.style.cssText = 'position:absolute;inset:0;background-size:cover;background-position:center 32%;filter:brightness(.6) saturate(1.08);pointer-events:none;';
+    }
+    s.host.insertBefore(u, s.host.firstChild);
+    return u;
+  }
+  function setUnderlay(u, kind, src) {
+    if (kind === 'idle') { if (u.getAttribute('src') !== src) u.src = src; }
+    else u.style.backgroundImage = 'url("' + src + '")';
+  }
+  function trackTransition(s) {
+    if (!s.src) return;
+    var u = underlayFor(s);
+    if (s.kind !== lastKind) {           // surface switch: resync instantly, no transition
+      lastKind = s.kind; lastSrc[s.kind] = s.src; setUnderlay(u, s.kind, s.src);
+      if (xfTimer) { clearTimeout(xfTimer); xfTimer = null; }
+      return;
+    }
+    if (s.src !== lastSrc[s.kind]) {
+      lastSrc[s.kind] = s.src;           // change in progress: new layer fades in over the
+      if (xfTimer) clearTimeout(xfTimer);// underlay (still the previous photo); then resync
+      xfTimer = setTimeout(function () {
+        xfTimer = null;
+        var cur = currentSurface();
+        if (cur && cur.kind === s.kind && cur.src === s.src && u.isConnected) setUnderlay(u, s.kind, s.src);
+      }, 1050);
+    } else {
+      setUnderlay(u, s.kind, s.src);     // same photo (e.g. reopened idle): keep in sync
+    }
   }
   function refreshCredit() {
     var s = currentSurface();
     if (!s) return;
+    trackTransition(s);
     if (s.src !== currentSrc || !creditEl || !creditEl.isConnected || creditEl.parentNode !== s.host) {
       currentSrc = s.src;
       makeCredit(s.host);
