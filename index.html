@@ -3,6 +3,17 @@
 .modes-chip>span{display:grid;grid-template-columns:1fr auto;column-gap:24px;row-gap:4px;align-items:center}.mode-chip-label{font-size:11px;letter-spacing:.14em;font-weight:700;color:#ebce94}.mode-chip-current{grid-row:2;font-weight:600;letter-spacing:0}.mode-chip-key{grid-column:2;grid-row:1/3;font-size:14px;color:#ebce94;border-left:1px solid #ffffff36;padding-left:16px}.modes-chip:hover{background:#2b3038;transform:translateY(-1px)}.modes-chip:focus-visible,.sw-card:focus-visible{outline:3px solid #fff;outline-offset:5px}.sw-card{font-family:inherit}.sw-row{max-width:90vw}.sw-card{width:min(300px,25vw)}.sw-card.sel{border-color:#e6c478}.sw-label{font-size:clamp(17px,2vw,25px)}
 @media(max-height:500px){.modes-chip,.shell.mode-wheel .modes-chip{top:auto;right:16px;bottom:12px;min-width:185px;padding:8px 12px}.mode-chip-current{font-size:15px}.mode-chip-label{font-size:9px}.sw-card{padding:22px 12px}.sw-row{gap:16px}.switcher{gap:22px}}
 @media(prefers-reduced-motion:reduce){.modes-chip,.sw-card{transition:none}}
+</style><style>
+/* Artistic mode: pitch-black background option. The pill pairs with the mode chip. */
+#art-bg-pill{position:fixed;left:50%;bottom:34px;transform:translateX(-50%);z-index:950;display:flex;align-items:center;gap:14px;padding:11px 20px;border-radius:999px;border:1.5px solid #16130f;background:rgba(244,242,236,.78);color:#16130f;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;cursor:pointer;transition:color .25s,border-color .25s,background .25s}
+#art-bg-pill .ab-dot{flex:0 0 auto;width:11px;height:11px;border-radius:50%;background:#16130f;transition:background .25s,box-shadow .25s}
+#art-bg-pill .ab-key{font-size:11px;opacity:.65;border-left:1px solid currentColor;padding-left:12px}
+#art-bg-pill.on-black{border-color:#f4f2ec;background:rgba(0,0,0,.5);color:#f4f2ec}
+#art-bg-pill.on-black .ab-dot{background:#f4f2ec;box-shadow:0 0 12px rgba(244,242,236,.9)}
+#art-bg-pill:focus-visible{outline:3px solid #fff;outline-offset:4px}
+#art-bg-pill[hidden]{display:none}
+@media(max-height:500px){#art-bg-pill{bottom:12px;padding:7px 14px;font-size:10px;gap:10px}#art-bg-pill .ab-key{font-size:9px;padding-left:8px}}
+@media(prefers-reduced-motion:reduce){#art-bg-pill,#art-bg-pill .ab-dot{transition:none}}
 </style></head><body><div id="root"></div><script type="module">
 // Keep the shipped scene bundle and wallpaper pipeline intact. Apply only the mode-shell patch.
 const patches=[["label:\"Current\",hint:\"Your Cosmos photo look\"", "label:\"Normal\",hint:\"Cinematic everyday TV\""], ["function m8(){const[A,c]=S.useState(\"current\"),[B,j]=S.useState(!1),[n,P]=S.useState(1)", "function m8(){const[A,c]=S.useState(\"castle\"),[B,j]=S.useState(!1),[n,P]=S.useState(2)"], ["className:\"modes-chip\",onClick:M,children:\"Modes \u00b7 M\"", "className:\"modes-chip\",onClick:M,\"aria-label\":\"Change TV mode\",children:z.jsxs(\"span\",{children:[z.jsx(\"span\",{className:\"mode-chip-label\",children:\"CHANGE MODE\"}),z.jsx(\"span\",{className:\"mode-chip-current\",children:CB.find(k=>k.id===A).label}),z.jsx(\"span\",{className:\"mode-chip-key\",children:\"M  \u2197\"})]})"], ["CB.map((k,D)=>z.jsxs(\"div\",{className:\"sw-card\"", "CB.map((k,D)=>z.jsxs(\"button\",{type:\"button\",\"aria-pressed\":k.id===A,className:\"sw-card\""],[".panel.sliced canvas {pointer-events:none;}", ".panel.sliced canvas {pointer-events:none;}\n/* Artistic tiles: larger roller, centred between header and footer, right edge on the page margin. */\n.wheel{transform:scale(.9);top:150px;right:14px}"]];
@@ -12,4 +23,79 @@ let source=await response.text();
 for(const [before,after] of patches){if(source.split(before).length!==2) throw new Error('Mode patch target changed');source=source.replace(before,after);}
 const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
 try{await import(url);}finally{URL.revokeObjectURL(url);}
+</script><script>
+// Artistic mode: pitch-black background option.
+// The wheel scene renders inside an open shadow root, so the black theme is a
+// style element injected there and toggled by a class on the shadow host.
+// Cream stays the default; the choice persists on this device.
+(function(){
+  var KEY='tv-art-bg';
+  var enabled=false;
+  try{enabled=localStorage.getItem(KEY)==='black';}catch(e){}
+  var BLACK_CSS=[
+    '.stage{background:#000;color:#f4f2ec}',
+    '.mast .brand .meta,.mast .mid,.ctl,.title,.metaRow .col .val,.foot .nav span,.foot .open{color:#f4f2ec}',
+    '.mast .mid .sec.dim,.metaRow .col .lbl,.metaRow .no .of,.foot .nav span .lbl{color:#a39c90}',
+    '.ctl.f{background:#f4f2ec;color:#000}',
+    '.panel,.panel.drow,.gtile{background:#191512}',
+    '.panel.f{outline-color:#f4f2ec;box-shadow:0 18px 50px rgba(0,0,0,.6)}',
+    '.gtile.f{outline-color:#f4f2ec}',
+    '.panel.sliced.f .stripinner::after{border-color:#f4f2ec}'
+  ].join('\n');
+  var pill=null;
+  function ensurePill(){
+    if(pill)return pill;
+    pill=document.createElement('button');
+    pill.id='art-bg-pill';
+    pill.type='button';
+    pill.hidden=true;
+    pill.setAttribute('aria-pressed','false');
+    pill.setAttribute('aria-label','Toggle pitch-black background in Artistic mode');
+    pill.innerHTML='<span class="ab-dot"></span><span class="ab-state">Cream</span><span class="ab-key">B</span>';
+    pill.addEventListener('click',toggle);
+    document.body.appendChild(pill);
+    return pill;
+  }
+  function wheelHost(){
+    var shell=document.querySelector('.shell.mode-wheel');
+    if(!shell)return null;
+    for(var i=0;i<shell.children.length;i++){if(shell.children[i].shadowRoot)return shell.children[i];}
+    return null;
+  }
+  function apply(){
+    ensurePill();
+    var host=wheelHost();
+    if(!host){pill.hidden=true;return;}
+    pill.hidden=false;
+    var st=host.shadowRoot.querySelector('#art-black-style');
+    if(!st){
+      st=document.createElement('style');
+      st.id='art-black-style';
+      host.shadowRoot.appendChild(st);
+    }
+    var css=enabled?BLACK_CSS:'';
+    if(st.textContent!==css)st.textContent=css;
+    host.classList.toggle('art-black',enabled);
+    pill.classList.toggle('on-black',enabled);
+    pill.setAttribute('aria-pressed',enabled?'true':'false');
+    pill.querySelector('.ab-state').textContent=enabled?'Background \u00b7 Black':'Background \u00b7 Cream';
+  }
+  function toggle(){
+    enabled=!enabled;
+    try{localStorage.setItem(KEY,enabled?'black':'cream');}catch(e){}
+    apply();
+  }
+  window.addEventListener('keydown',function(e){
+    if(e.key!=='b'&&e.key!=='B')return;
+    if(!document.querySelector('.shell.mode-wheel'))return;
+    if(document.querySelector('.switcher'))return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    toggle();
+  },true);
+  var root=document.getElementById('root');
+  if(root)new MutationObserver(apply).observe(root,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+  setTimeout(apply,400);
+  setTimeout(apply,1500);
+})();
 </script><script src="./fresh.js" defer></script></body></html>
