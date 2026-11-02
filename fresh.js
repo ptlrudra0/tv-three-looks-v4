@@ -6,6 +6,12 @@
   var TOKEN = 'tvfeed-e7c2f1a94b3d4c5a6b7c8d9e0f1a2b3c';
   var qs = new URLSearchParams(location.search);
   if (qs.get('wpfeed')) { FEED = qs.get('wpfeed'); TOKEN = qs.get('wptoken') || ''; }
+  // FRESH PIPELINE TEMPORARILY DISABLED (2026-11-02): the RMBG-1.4 segmentation model's
+  // actual license agreement (BRIA Hugging Face Model License Agreement, Dec 2023) is
+  // evaluation-only and terminable at will, which does not cover this ongoing public demo.
+  // The demo runs on the 5 curated photos (with their built-in depth cutouts) until the
+  // segmentation model is replaced with a permissively licensed one.
+  var FRESH_ENABLED = false;
   var QUERIES = ['cinematic car night', 'cricket stadium', 'cinematic city night', 'cinematic mountain landscape', 'film still moody', 'supercar dark', 'cinematic desert road', 'stadium lights'];
   var MAXFRESH = 12, ROUND_LIMIT = 3;
   var WP = null, curated = 0, fresh = [], credits = {}, worker = null, wid = 0, pend = {}, modelReady = false, rounds = 0;
@@ -221,6 +227,7 @@
       clearInterval(bootT);
       WP = window.__TVWP; curated = WP.bg.length;
       log('hooked, curated', curated);
+      if (!FRESH_ENABLED) { log('fresh pipeline disabled: segmentation model license under repair; curated wallpapers only'); return; }
       ensureWorker().postMessage({ id: ++wid, warmup: true });
       fetchBatch();
     }

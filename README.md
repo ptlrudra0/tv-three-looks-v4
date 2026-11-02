@@ -14,3 +14,6 @@ Keyboard: arrows to move, Enter to open, Esc to close, M for modes.
 
 - **Castle Home** (Harry Potter mode) is a fan-made project by its original creator, adapted here as an interactive browser preview - [original project and guide](https://drive.google.com/drive/folders/1jeKucAZAt9xSDdZFsov3JPA-OPHUc8Fd). Not affiliated with or endorsed by Warner Bros., Wizarding World or J.K. Rowling. Film posters come from TMDB; app logos belong to their owners.
 - Backdrop photos: [Unsplash](https://unsplash.com).
+
+## Status note (2026-11-02)
+Fresh-photo fetching is temporarily disabled: the depth-cutout model previously used (briaai/RMBG-1.4) turned out to be under an evaluation-only license that does not cover an ongoing public demo. The demo runs on the curated photo set until a permissively licensed segmentation model replaces it. Unsplash proxy endpoints remain deployed but unused.
