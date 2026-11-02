@@ -39,6 +39,9 @@ try{await import(url);}finally{URL.revokeObjectURL(url);}
     '.ctl.f{background:#f4f2ec;color:#000}',
     '.panel,.panel.drow,.gtile{background:#191512}',
     '.panel.f{outline-color:#f4f2ec;box-shadow:0 18px 50px rgba(0,0,0,.6)}',
+    // Curved tiles are transparent canvases, not flat rounded placeholders.
+    '.panel.sliced{background:transparent}',
+    '.panel.sliced.f{box-shadow:none}',
     '.gtile.f{outline-color:#f4f2ec}',
     '.panel.sliced.f .stripinner::after{border-color:#f4f2ec}'
   ].join('\n');
