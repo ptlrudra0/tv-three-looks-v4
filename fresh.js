@@ -11,7 +11,7 @@
   // evaluation-only and terminable at will, which does not cover this ongoing public demo.
   // The demo runs on the 5 curated photos (with their built-in depth cutouts) until the
   // segmentation model is replaced with a permissively licensed one.
-  var FRESH_ENABLED = false;
+  var FRESH_ENABLED = true;
   var QUERIES = ['cinematic car night', 'cricket stadium', 'cinematic city night', 'cinematic mountain landscape', 'film still moody', 'supercar dark', 'cinematic desert road', 'stadium lights'];
   var MAXFRESH = 12, ROUND_LIMIT = 3;
   var WP = null, curated = 0, fresh = [], credits = {}, worker = null, wid = 0, pend = {}, modelReady = false, rounds = 0;

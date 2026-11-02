@@ -16,4 +16,4 @@ Keyboard: arrows to move, Enter to open, Esc to close, M for modes.
 - Backdrop photos: [Unsplash](https://unsplash.com).
 
 ## Status note (2026-11-02)
-Fresh-photo fetching is temporarily disabled: the depth-cutout model previously used (briaai/RMBG-1.4) turned out to be under an evaluation-only license that does not cover an ongoing public demo. The demo runs on the curated photo set until a permissively licensed segmentation model replaces it. Unsplash proxy endpoints remain deployed but unused.
+The depth-cutout model was replaced on 2026-11-02: the previous model (briaai/RMBG-1.4) turned out to be under an evaluation-only license that does not cover an ongoing public demo, so it was removed the same day. The pipeline now uses Depth Anything V2 Small (Apache-2.0).
