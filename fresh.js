@@ -44,16 +44,35 @@
     });
   }
 
-  // clock placement from mask stats, converting image px -> 1280x720 stage px (object-fit: cover)
-  function placement(stats, iw, ih) {
-    var scale = Math.max(1280 / iw, 720 / ih);
-    var sy = stats.bandTop * scale + (720 - ih * scale) / 2; // subject top in stage px
-    var size = 12;
-    if (sy > 470) size = 14;
-    var digitH = size * 16 * 0.92;
-    var top = Math.round(sy - 0.58 * digitH - 40);
-    top = Math.max(-8, Math.min(top, 380));
-    return { top: top, size: size, sy: sy };
+  // clock placement from mask profile, converting image px -> 1280x720 stage px (object-fit: cover).
+  // Goal: the subject's sustained top edge crosses the lower ~30% of the digits, so the
+  // foreground cutout visibly overlaps the clock (depth) while the time stays readable.
+  var DATE_H = 40;                 // idle-date block above the digits (28px + leading)
+  var DIGIT_H = 12 * 16 * 0.92;    // size 12em digits at root 16px, line-height .92
+  function profileTop(stats) {     // first row of SUSTAINED center-band foreground (stray-pixel proof)
+    var rows = stats.bandRows, h = stats.h, bw = Math.ceil(stats.w * 0.36);
+    var win = Math.max(3, Math.round(h * 0.04)), run = 0;
+    for (var y = 0; y < h; y++) {
+      run += rows[y]; if (y >= win) run -= rows[y - win];
+      if (y >= win - 1 && run / (win * bw) >= 0.2) return y - win + 1;
+    }
+    return -1;
+  }
+  function overlapCov(stats, st, ovRowsImg) { // mean band coverage inside the planned overlap zone
+    var rows = stats.bandRows, bw = Math.ceil(stats.w * 0.36), s = 0, n = 0;
+    for (var y = st; y < Math.min(stats.h, st + ovRowsImg); y++) { s += rows[y]; n++; }
+    return n ? s / (n * bw) : 0;
+  }
+  function placement(stats) {
+    var scale = Math.max(1280 / stats.w, 720 / stats.h);
+    var offY = (720 - stats.h * scale) / 2;
+    var st = profileTop(stats);
+    if (st < 0) return null;
+    var sy = st * scale + offY;                      // sustained subject top in stage px
+    var top = Math.round(sy - 0.62 * DIGIT_H - DATE_H);
+    top = Math.max(6, Math.min(top, Math.round(720 - DATE_H - DIGIT_H - 20)));
+    var digitsBot = top + DATE_H + DIGIT_H;
+    return { top: top, size: 12, sy: sy, st: st, scale: scale, ovPx: digitsBot - sy };
   }
 
   function accept(stats) {
@@ -62,8 +81,6 @@
     var bw = (stats.bbox[2] - stats.bbox[0]) / stats.w;
     if (bw < 0.15) return false;
     if (stats.bandCov < 0.015) return false;
-    var topFrac = stats.bandTop / stats.h;
-    if (topFrac < 0.10 || topFrac > 0.75) return false;
     return true;
   }
 
@@ -80,14 +97,19 @@
         var res = out.res;
         if (!res.ok) { log('seg fail', res.error); return false; }
         if (!accept(res.stats)) { log('gated out', p.id, JSON.stringify({ cov: +res.stats.coverage.toFixed(2), bandCov: +res.stats.bandCov.toFixed(3), top: res.stats.bandTop })); return false; }
-        var pl = placement(res.stats, res.stats.w, res.stats.h);
+        var pl = placement(res.stats);
+        if (!pl) { log('gated out', p.id, 'no sustained subject'); return false; }
+        var ovFrac = pl.ovPx / DIGIT_H;
+        if (ovFrac < 0.10 || ovFrac > 0.60) { log('gated out', p.id, 'overlap ' + ovFrac.toFixed(2)); return false; }
+        var ovC = overlapCov(res.stats, pl.st, Math.round(pl.ovPx / pl.scale));
+        if (ovC < 0.25) { log('gated out', p.id, 'wispy overlap ' + ovC.toFixed(2)); return false; }
         var cutUrl = URL.createObjectURL(res.blob);
         var i = WP.bg.length;
         WP.bg.push(p.url); WP.idle.push(p.url); WP.cut.push(cutUrl); WP.clk.push({ top: pl.top, size: pl.size });
         fresh.push(i);
         credits[p.url] = { author: p.author, link: p.authorLink };
         ping(p.dl);
-        log('added', p.id, 'at index', i, 'clock', JSON.stringify({ top: pl.top, size: pl.size }));
+        log('added', p.id, 'at index', i, 'clock', JSON.stringify({ top: pl.top, size: pl.size, ov: +ovFrac.toFixed(2) }));
         return true;
       })
       .catch(function (e) { log('photo fail', e); return false; });
@@ -120,36 +142,78 @@
   }
 
   // --- photo credit overlay (Unsplash guideline: photographer + Unsplash, linked) ---
-  var creditEl = null, currentSrc = '';
+  var creditEl = null, currentSrc = null;
   function creditFor(src) {
-    var c = credits[src];
+    var c = src && credits[src];
     return c ? ('Photo · ' + c.author + ' · Unsplash') : 'Photos · Unsplash';
   }
+  function linkFor(src) {
+    var c = src && credits[src];
+    return c ? c.link : 'https://unsplash.com/?utm_source=tvhome&utm_medium=referral';
+  }
   function makeCredit(host) {
-    if (creditEl) return;
+    if (creditEl && creditEl.isConnected && creditEl.parentNode === host) return;
     creditEl = document.createElement('a');
-    creditEl.style.cssText = 'position:absolute;left:18px;bottom:14px;z-index:25;color:rgba(255,255,255,.55);font:500 11px Inter,system-ui,sans-serif;letter-spacing:.04em;text-decoration:none;pointer-events:auto;';
+    creditEl.className = 'fresh-credit';
+    creditEl.style.cssText = 'position:absolute;left:18px;bottom:14px;z-index:25;color:rgba(255,255,255,.55);font:500 11px Inter,system-ui,sans-serif;letter-spacing:.04em;text-decoration:none;pointer-events:auto;text-shadow:0 1px 6px rgba(0,0,0,.6);';
     creditEl.target = '_blank'; creditEl.rel = 'noopener';
     host.appendChild(creditEl);
   }
   function syncCredit() {
     if (!creditEl) return;
-    var c = credits[currentSrc];
     creditEl.textContent = creditFor(currentSrc);
-    creditEl.href = c ? c.link : 'https://unsplash.com/?utm_source=tvhome&utm_medium=referral';
+    creditEl.href = linkFor(currentSrc);
   }
-  var obs = new MutationObserver(function () {
-    var idle = document.querySelector('.idle');
-    if (idle && !idle.querySelector('.fresh-credit')) {
-      makeCredit(idle); creditEl.className = 'fresh-credit';
-      var img = idle.querySelector('img.idle-layer');
-      if (img) { currentSrc = img.getAttribute('src') || ''; syncCredit(); }
+  // shadow-DOM-aware query (the app renders modes inside shadow roots)
+  function deepQ(sel, root) {
+    root = root || document;
+    var el = root.querySelector(sel);
+    if (el) return el;
+    var all = root.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].shadowRoot) { var r = deepQ(sel, all[i].shadowRoot); if (r) return r; }
     }
-    if (!idle && creditEl) { creditEl = null; currentSrc = ''; }
-    var layer = document.querySelector('.idle img.idle-layer');
-    if (layer && layer.getAttribute('src') !== currentSrc) { currentSrc = layer.getAttribute('src') || ''; syncCredit(); }
+    return null;
+  }
+  function eachRoot(cb, root) {
+    root = root || document;
+    cb(root);
+    var all = root.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) if (all[i].shadowRoot) eachRoot(cb, all[i].shadowRoot);
+  }
+  function currentSurface() {
+    var idle = deepQ('.idle');
+    if (idle) {
+      var img = idle.querySelector('img.idle-layer');
+      return { host: idle, src: img ? img.getAttribute('src') : null };
+    }
+    var bd = deepQ('.bd');
+    if (bd && bd.parentNode) {
+      var m = /url\(["']?([^"')]+)/.exec(bd.style.backgroundImage || '');
+      return { host: bd.parentNode, src: m ? m[1] : null };
+    }
+    return null;
+  }
+  function refreshCredit() {
+    var s = currentSurface();
+    if (!s) return;
+    if (s.src !== currentSrc || !creditEl || !creditEl.isConnected || creditEl.parentNode !== s.host) {
+      currentSrc = s.src;
+      makeCredit(s.host);
+      syncCredit();
+    }
+  }
+  var observed = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
+  var obs = new MutationObserver(function () {
+    eachRoot(function (r) {
+      var target = r === document ? document.documentElement : r;
+      if (observed && !observed.has(target)) { observed.add(target); obs.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'style'] }); }
+    });
+    refreshCredit();
   });
-  obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'style'] });
+  if (observed) observed.add(document.documentElement);
+  var creditTick = setInterval(refreshCredit, 3000); // safety net for missed mutations
 
   // --- boot: wait for the Current mode component to expose the wallpaper arrays ---
   var bootT = setInterval(function () {

@@ -18,6 +18,7 @@ self.onmessage = async (e) => {
     let fg = 0, minx = 1e9, miny = 1e9, maxx = -1, maxy = -1;
     const x0 = Math.floor(w * 0.32), x1 = Math.ceil(w * 0.68);
     let bandFg = 0, bandTop = -1;
+    const bandRows = new Uint16Array(h);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const a = data[(y * w + x) * 4 + 3];
@@ -25,11 +26,11 @@ self.onmessage = async (e) => {
           fg++;
           if (x < minx) minx = x; if (x > maxx) maxx = x;
           if (y < miny) miny = y; if (y > maxy) maxy = y;
-          if (x >= x0 && x <= x1) { bandFg++; if (bandTop < 0) bandTop = y; }
+          if (x >= x0 && x <= x1) { bandFg++; bandRows[y]++; if (bandTop < 0) bandTop = y; }
         }
       }
     }
-    const stats = { coverage: fg / (w * h), bbox: [minx, miny, maxx, maxy], bandCov: bandFg / ((x1 - x0) * h), bandTop, w, h };
+    const stats = { coverage: fg / (w * h), bbox: [minx, miny, maxx, maxy], bandCov: bandFg / ((x1 - x0) * h), bandTop, w, h, bandRows };
     const oc = new OffscreenCanvas(w, h);
     const ctx = oc.getContext('2d');
     ctx.putImageData(new ImageData(new Uint8ClampedArray(data), w, h), 0, 0);
